@@ -15,22 +15,32 @@ def code(n):
     m=re.match(r'^([A-Z]+)\s*(\d+)',n); return (m.group(1)+m.group(2)) if m else n[:8]
 w=lambda t:Counter(re.findall(r"[a-z0-9]+",t.lower()))
 IGN=set("cpc reviewed adopted approved endorsed board date next review page administrative procedure policy college of the canyons santa clarita spring fall revised".split())
+ROMAN=set("i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii".split())
+def fulltext(path):
+    d=Document(path); parts=[p.text for p in d.paragraphs]
+    for t in d.tables:
+        for row in t.rows:
+            for cell in row.cells: parts.append(cell.text)
+    return " ".join(parts)
+def realtoks(t): return Counter(x for x in re.findall(r"[a-z0-9]+",t.lower()) if len(x)>1 and x not in ROMAN and not x.isdigit())
 
 # render final docs
-tmp=os.path.join(HERE,"_pdf"); os.makedirs(tmp,exist_ok=True)
 docs=[]
 for sub in ("3000","4000","5000"):
     for f in sorted(glob.glob(os.path.join(FIN,sub,"*.docx"))):
         docs.append((sub,f))
 files=[f for _,f in docs]
-for k in range(0,len(files),20):
-    subprocess.run([SOFFICE,"--headless","--convert-to","pdf","--outdir",tmp]+files[k:k+20],capture_output=True,timeout=600)
-for sub,f in docs:
-    c=code(os.path.basename(f))
-    for old in glob.glob(os.path.join(IMG,c+"-*.png")): os.remove(old)
-    pdf=os.path.join(tmp,os.path.splitext(os.path.basename(f))[0]+".pdf")
-    if os.path.exists(pdf):
-        subprocess.run(["pdftoppm","-png","-r",RES,pdf,os.path.join(IMG,c)],capture_output=True)
+if not glob.glob(os.path.join(IMG,"*.png")):   # skip render if images already present
+    tmp=os.path.join(HERE,"_pdf"); os.makedirs(tmp,exist_ok=True)
+    for k in range(0,len(files),20):
+        subprocess.run([SOFFICE,"--headless","--convert-to","pdf","--outdir",tmp]+files[k:k+20],capture_output=True,timeout=600)
+    for sub,f in docs:
+        c=code(os.path.basename(f))
+        for old in glob.glob(os.path.join(IMG,c+"-*.png")): os.remove(old)
+        pdf=os.path.join(tmp,os.path.splitext(os.path.basename(f))[0]+".pdf")
+        if os.path.exists(pdf):
+            subprocess.run(["pdftoppm","-png","-r",RES,pdf,os.path.join(IMG,c)],capture_output=True)
+    import shutil as _sh; _sh.rmtree(tmp,ignore_errors=True)
 def pages(c):
     hits=glob.glob(os.path.join(IMG,c+"-*.png"))
     return [os.path.basename(x) for x in sorted(hits,key=lambda x:int(re.search(r'-(\d+)\.png$',x).group(1)))]
@@ -43,13 +53,13 @@ def metrics(sub,f):
     lang=d.styles.element.find(qn('w:docDefaults')) is not None
     alt=all((s._inline.find(qn('wp:docPr')) is not None and (s._inline.find(qn('wp:docPr')).get('descr') or '').strip()) for s in d.inline_shapes)
     acc = (h1==1 and not skip and lang and alt)
-    # integrity: current docx tokens vs final rendered tokens
+    # integrity: authoritative docx-vs-docx full text (paragraphs+tables), markers ignored
     cur=os.path.join(CUR,sub,os.path.basename(f))
-    curtext=" ".join(p.text for p in Document(cur).paragraphs) if os.path.exists(cur) else ""
-    c=code(os.path.basename(f))
-    pdf=os.path.join(tmp,os.path.splitext(os.path.basename(f))[0]+".pdf")
-    rt=subprocess.run(["pdftotext","-layout",pdf,"-"],capture_output=True,text=True).stdout if os.path.exists(pdf) else ""
-    diff={k:v for k in set(w(curtext))|set(w(rt)) if (v:=w(curtext)[k]-w(rt)[k]) and k not in IGN and not k.isdigit()}
+    if os.path.exists(cur):
+        ct=realtoks(fulltext(cur)); ft=realtoks(fulltext(f))
+        diff={k:v for k in set(ct)|set(ft) if (v:=ct[k]-ft[k]) and k not in IGN}
+    else:
+        diff={}
     r=results.get((sub,os.path.basename(f)),{})
     return dict(h=(hs.count(1),hs.count(2),hs.count(3)),acc=acc,skip=skip,lang=lang,alt=alt,
                 integ=(not diff),rlists=r.get('real_lists',0),flags=r.get('flags',[]),
@@ -78,7 +88,6 @@ for sub,f in docs:
         f'<div style="background:#003366;color:#fff;padding:10px 16px;position:sticky;top:0;z-index:5;"><b style="font-size:15px;">{esc(os.path.splitext(os.path.basename(f))[0])}</b>'
         f'<a href="#top" style="float:right;color:#cdd9e8;font-size:12px;text-decoration:none;">&#8679; top</a><div style="margin-top:6px;">{badges}</div></div>'
         f'<div style="padding:12px 16px;">{flagnote}{imgs}</div></section>')
-import shutil; shutil.rmtree(tmp,ignore_errors=True)
 N=len(docs)
 banner=(f'<div style="background:#003366;color:#fff;border-radius:9px;padding:20px 24px;margin-bottom:14px;">'
  f'<div style="font-size:23px;font-weight:700;">Final Accessible Policy Uploads &mdash; Audit</div>'
