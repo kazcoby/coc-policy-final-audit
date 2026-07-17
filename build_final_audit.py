@@ -55,6 +55,11 @@ render("cur", CUR)      # left column
 def pages(c,side):
     hits=glob.glob(os.path.join(IMG,f"{c}_{side}-*.png"))
     return [os.path.basename(x) for x in sorted(hits,key=lambda x:int(re.search(r'-(\d+)\.png$',x).group(1)))]
+def src(name):
+    # cache-busting: mtime query so browsers/CDN refetch changed images
+    try: v=int(os.path.getmtime(os.path.join(IMG,name)))
+    except OSError: v=0
+    return f"img/{name}?v={v}"
 
 def metrics(sub,f):
     d=Document(f)
@@ -92,8 +97,8 @@ for sub,f in docs:
     cur_p=pages(c,"cur"); new_p=pages(c,"new"); npg=max(len(cur_p),len(new_p))
     rows=[]
     for i in range(npg):
-        l=(f'<img src="img/{cur_p[i]}" loading="lazy" style="width:100%;border:2px solid #b3771a;display:block;">' if i<len(cur_p) else '<div style="padding:26px;color:#9aa;text-align:center;border:2px solid #e3c9a0;">(no page)</div>')
-        r=(f'<img src="img/{new_p[i]}" loading="lazy" style="width:100%;border:2px solid #1d6b3f;display:block;">' if i<len(new_p) else '<div style="padding:26px;color:#9aa;text-align:center;border:2px solid #a9cdb8;">(no page)</div>')
+        l=(f'<img src="{src(cur_p[i])}" loading="lazy" style="width:100%;border:2px solid #b3771a;display:block;">' if i<len(cur_p) else '<div style="padding:26px;color:#9aa;text-align:center;border:2px solid #e3c9a0;">(no page)</div>')
+        r=(f'<img src="{src(new_p[i])}" loading="lazy" style="width:100%;border:2px solid #1d6b3f;display:block;">' if i<len(new_p) else '<div style="padding:26px;color:#9aa;text-align:center;border:2px solid #a9cdb8;">(no page)</div>')
         rows.append(f'<tr><td width="50%" style="vertical-align:top;padding:8px;"><div style="background:#b3771a;color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:5px 5px 0 0;">CURRENT &middot; p{i+1}</div>{l}</td>'
                     f'<td width="50%" style="vertical-align:top;padding:8px;"><div style="background:#1d6b3f;color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:5px 5px 0 0;">FINAL ACCESSIBLE &middot; p{i+1}</div>{r}</td></tr>')
     secs[sub].append(f'<section id="{c}" style="margin:0 0 32px;border:1px solid #d7dee7;border-radius:9px;overflow:hidden;">'
